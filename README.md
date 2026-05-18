@@ -11,8 +11,11 @@
 ## Table of Contents
 - [Features](#features)
 - [Process Summary](#process-summary)
+- [What this project is](#what-this-project-is)
+- [How to Dockerize your project (step-by-step)](#how-to-dockerize-your-project-step-by-step)
 - [Requirements](#requirements)
 - [Quick Start with Samples](#quick-start-with-samples)
+
   - [Provided Samples](#provided-samples)
   - [How to Start with a React Guide](#how-to-start-with-a-react-guide)
   - [How to Start with a Node Sample](#how-to-start-with-a-node-sample)
@@ -91,7 +94,94 @@
 6. **Production Deployment**
    - Refer to the [Production Deployment](#production-deployment) section
    
+## What this project is
+
+Docker-Blue-Green-Runner is a deployment runner that performs **blue/green** releases for your application **from your source code + your app’s Dockerfile** (not from a pre-built image you manage separately).
+
+It builds (or loads) two versions of your app container (blue/green), runs health checks, updates **Nginx** routing, then stops the old version—aiming for **zero downtime**.
+
+(Orientation for users with your own app + deployment workflows.)
+
+
+### Main building blocks
+- **App containers**: `${PROJECT_NAME}-blue` and `${PROJECT_NAME}-green`
+- **Nginx container**: `${PROJECT_NAME}-nginx` that routes traffic to the active app state
+- **Runner script**: `bash run.sh` orchestrates the whole pipeline
+
+### Step-by-step: how the runner works (workflow)
+The runner’s workflow is implemented by `run.sh` and maps to these phases:
+1. Initialize & validate `.env`
+2. Backup existing docker images/tags (safety)
+3. Build or load your app image (`GIT_IMAGE_LOAD_FROM=build|registry|file`)
+4. Start the non-active state (blue/green)
+5. Internal integrity checks inside the app container:
+   - connection check using `wait-for-it.sh`
+   - health check using `curl` against `APP_HEALTH_CHECK_PATH`
+6. If configured, rebuild/reload Nginx templates (`NGINX_RESTART=true`)
+7. External integrity check from outside the container by calling `APP_URL/APP_HEALTH_CHECK_PATH`
+8. If checks pass: switch traffic and stop the previous state
+9. If checks fail: emergency scripts / rollback
+
+## How to Dockerize your project (step-by-step)
+
+This section explains what your **app repository** must provide so that this runner can deploy it safely.
+
+### 1) Provide a Dockerfile that can be started by the runner
+Your app Dockerfile must:
+- Include `bash` and `curl` (the runner uses both for integrity checks)
+- Start your HTTP server during/after container startup
+- Listen on the port(s) implied by your runner configuration (`PROJECT_PORT` / internal port expectations)
+
+### 2) Expose a health endpoint
+The runner periodically checks:
+- `APP_HEALTH_CHECK_PATH` (set in `.env`)
+- using `curl` from inside the container and also from outside using `APP_URL`
+
+Example:
+- `APP_HEALTH_CHECK_PATH=api/v1/health`
+
+### 3) Ensure container can run integrity checks
+Your container image must be compatible with the runner checks:
+- `wait-for-it.sh` is copied into the running container and used to check the app listening socket
+- runner searches for “good” vs “bad” patterns:
+  - `GOOD_APP_HEALTH_CHECK_PATTERN` and `BAD_APP_HEALTH_CHECK_PATTERN`
+
+### 4) Set runner configuration in `.env`
+At minimum, you must set:
+- `APP_URL` (http or https)
+- `APP_HEALTH_CHECK_PATH`
+- `PROJECT_PORT`
+- plus Docker/app-specific settings for volumes and environment variables
+
+### 5) Build & deploy locally (blue/green)
+From the repository root:
+1. Copy your sample env template (or create your own):
+   - `cp -f .env.example.node .env`
+   - `cp -f .env.example.php .env`
+   - `cp -f .env.example.java .env`
+2. Start deployment:
+   - `bash run.sh`
+   - or with privileges: `sudo bash run.sh`
+
+### 6) Observe & operate
+Common operational commands:
+- Check which state is running:
+  - `bash check-current-states.sh`
+- Rollback app image:
+  - `bash rollback.sh`
+- Emergency Nginx actions:
+  - `bash emergency-nginx-down-and-up.sh`
+  - `bash emergency-nginx-restart.sh`
+
+### Production workflow (high level)
+- `GIT_IMAGE_LOAD_FROM=build`: runner builds your Dockerfile
+- `GIT_IMAGE_LOAD_FROM=registry`: runner pulls images from a registry
+- `GIT_IMAGE_LOAD_FROM=file`: runner loads a docker image binary (`docker save`) delivered by CI or the build server
+
+You can see the detailed production steps under **Production Deployment**.
+
 ## Process Summary
+
 
 - Term Reference
   - ``All`` means below is "App", "Nginx"".

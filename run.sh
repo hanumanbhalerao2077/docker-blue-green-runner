@@ -1,7 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # set -e: This option tells the script to exit immediately if any command returns a non-zero status (i.e., if a command fails). This prevents the script from continuing execution when an error occurs, making it easier to catch issues early.
 # set -u: This option causes the script to throw an error and stop if it tries to use an undefined variable. This helps catch typos or missing variable definitions that could lead to unexpected behavior.
 set -eu
+
 
 source use-common.sh
 
